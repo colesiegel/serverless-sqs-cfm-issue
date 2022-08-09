@@ -58,6 +58,7 @@ resources:
           OnFailure:
             Destination:
               Fn::GetAtt: ['EventHandlerDLQ', 'Arn']
+        # this is just a string, not a reference; maybe this only works by chance currently, and that is why minimal changes break it?
         FunctionName: serverless-bug-repro-dev-hello
         Qualifier: $LATEST
     EventHandlerQueue:
