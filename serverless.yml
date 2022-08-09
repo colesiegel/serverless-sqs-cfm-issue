@@ -1,0 +1,78 @@
+service: serverless-bug-repro
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - s3:*
+            - sqs:*
+            - logs:*
+            - events:PutEvents
+            - ssm:GetParameter*
+          Resource: '*'
+
+functions:
+  hello:
+    handler: handler.hello
+    events:
+      - eventBridge:
+          enabled: true
+          pattern:
+            source:
+              - bla.api
+            detail-type:
+              - event:create
+          deadLetterQueueArn:
+            Fn::GetAtt: ['EventHandlerDLQ', 'Arn']
+    provisionedConcurrency: 0
+  goodbye:
+    handler: handler.hello
+    events:
+    # inline sqs trigger causes `EventHandlerDLQEventInvokeConfig` to get deployed before `hello`
+    # Cfm deployment fails
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - EventHandlerQueue
+              - Arn
+          batchSize: 1
+    provisionedConcurrency: 0
+
+resources:
+  Resources:
+    EventHandlerDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: serverless-bug-repro-queue
+        MessageRetentionPeriod: 1209600
+    EventHandlerDLQEventInvokeConfig:
+      Type: AWS::Lambda::EventInvokeConfig
+      Properties:
+        DestinationConfig:
+          OnFailure:
+            Destination:
+              Fn::GetAtt: ['EventHandlerDLQ', 'Arn']
+        FunctionName: serverless-bug-repro-dev-hello
+        Qualifier: $LATEST
+    EventHandlerQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: serverless-bug-repro-second-queue
+        MessageRetentionPeriod: 1209600
+  # Explicit trigger succeeds Cfm deployment
+    # GoodbyeExplicitTrigger:
+    #   Type: AWS::Lambda::EventSourceMapping
+    #   Properties:
+    #     BatchSize: 1
+    #     Enabled: true
+    #     EventSourceArn:
+    #       Fn::GetAtt:
+    #         - EventHandlerQueue
+    #         - Arn
+    #     FunctionName: serverless-bug-repro-dev-goodbye
